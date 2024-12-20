@@ -13,7 +13,8 @@ class ChessBoard:
         pygame.display.set_caption("Chess Game")
         
         # Colors
-        self.WHITE = (239, 180, 139)
+        self.WHITE = (255, 255, 255)
+        self.LIGHT = (239, 180, 139)
         self.BROWN = (145, 79, 31)
         self.YELLOW = (255, 255, 0, 50)
         self.RED = (255, 0, 0, 50)
@@ -84,7 +85,7 @@ class ChessBoard:
     def draw_board(self):
         for row in range(8):
             for col in range(8):
-                color = self.WHITE if (row + col) % 2 == 0 else self.BROWN
+                color = self.LIGHT if (row + col) % 2 == 0 else self.BROWN
                 pygame.draw.rect(
                     self.screen, 
                     color, 
