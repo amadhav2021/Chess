@@ -1,4 +1,4 @@
-"""App to play chess. Claude 3.5 Sonnet was used to help with development"""
+"""App to play chess. Claude 3.5 Sonnet and ChatGPT 4o-mini was used to help with development"""
 
 import pygame
 from copy import deepcopy
@@ -22,7 +22,7 @@ class ChessBoard:
 
         # Sound effects
         self.move_sound = pygame.mixer.Sound('sounds/move-self.mp3')
-        self.capture_sound = pygame.mixer.Sound('sounds/capture 2.mp3')
+        self.capture_sound = pygame.mixer.Sound('sounds/capture.mp3')
         self.check_sound = pygame.mixer.Sound('sounds/check.mp3')
         self.checkmate_sound = pygame.mixer.Sound('sounds/checkmate.mp3')
         
