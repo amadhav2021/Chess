@@ -23,6 +23,7 @@ class ChessBoard:
         # Sound effects
         self.move_sound = pygame.mixer.Sound('sounds/move-self.mp3')
         self.capture_sound = pygame.mixer.Sound('sounds/capture.mp3')
+        self.castling_sound = pygame.mixer.Sound('sounds/castling.mp3')
         self.check_sound = pygame.mixer.Sound('sounds/check.mp3')
         self.checkmate_sound = pygame.mixer.Sound('sounds/checkmate.mp3')
         
@@ -422,7 +423,7 @@ class ChessBoard:
             # Move king
             self.board_state[end_row][end_col] = moving_piece
             self.board_state[start_row][start_col] = '--'
-            self.move_sound.play()
+            self.castling_sound.play()
         
         else:
             # Check if the move is a capture
