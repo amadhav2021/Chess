@@ -21,8 +21,8 @@ class ChessBoard:
         self.ALPHA = 200
 
         # Sound effects
-        self.move_sound = pygame.mixer.Sound('sounds/piece.mp3')
-        self.capture_sound = pygame.mixer.Sound('sounds/capture.mp3')
+        self.move_sound = pygame.mixer.Sound('sounds/move-self.mp3')
+        self.capture_sound = pygame.mixer.Sound('sounds/capture 2.mp3')
         self.check_sound = pygame.mixer.Sound('sounds/check.mp3')
         self.checkmate_sound = pygame.mixer.Sound('sounds/checkmate.mp3')
         
