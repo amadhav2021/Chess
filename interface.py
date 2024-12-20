@@ -19,6 +19,12 @@ class ChessBoard:
         self.RED = (255, 0, 0, 50)
         self.GRAY = (128, 128, 128)
         self.ALPHA = 200
+
+        # Sound effects
+        self.move_sound = pygame.mixer.Sound('sounds/piece.mp3')
+        self.capture_sound = pygame.mixer.Sound('sounds/capture.mp3')
+        self.check_sound = pygame.mixer.Sound('sounds/check.mp3')
+        self.checkmate_sound = pygame.mixer.Sound('sounds/checkmate.mp3')
         
         # Game state
         self.selected_piece = None
@@ -202,6 +208,15 @@ class ChessBoard:
                     if not has_valid_moves:
                         self.checkmate = self.in_check
                         self.stalemate = not self.in_check
+                        self.checkmate_sound.play()
+                    
+                    elif self.in_check:
+                        self.check_sound.play()
+
+                    # Check for draw by insufficient material
+                    if self.is_insufficient():
+                        self.insufficient = True
+                        self.checkmate_sound.play()
                     
                     return True
         return False
@@ -261,6 +276,9 @@ class ChessBoard:
         if destination != '--':
             self.pieces_left[destination]-=1
             self.piece_count-=1
+            self.capture_sound.play()
+        else:
+            self.move_sound.play()
         
         # Make the move
         self.board_state[end_row][end_col] = moving_piece
@@ -295,9 +313,15 @@ class ChessBoard:
         if not has_valid_moves:
             self.checkmate = self.in_check
             self.stalemate = not self.in_check
+            self.checkmate_sound.play()
+        
+        elif self.in_check:
+            self.check_sound.play()
 
         # Check for draw by insufficient material
-        self.insufficient = self.is_insufficient()
+        if self.is_insufficient():
+            self.insufficient = True
+            self.checkmate_sound.play()
 
     def get_valid_moves_for_piece(self, start_row, start_col, check_check=True):
         """Get all valid moves for a piece"""
