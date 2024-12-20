@@ -502,6 +502,7 @@ class ChessBoard:
         """Get all valid moves for a piece"""
         piece = self.board_state[start_row][start_col]
         moves = []
+        valid_moves = []
         
         if piece == '--':
             return moves
@@ -529,7 +530,6 @@ class ChessBoard:
                         moves.append((start_row + direction, start_col + col_offset))
 
             # En passant capture
-             # En passant capture
             if self.last_move:
                 last_start_row, last_start_col, last_end_row, last_end_col = self.last_move
                 if abs(last_end_row - last_start_row) == 2 and abs(last_end_col - start_col) == 1:
@@ -545,6 +545,7 @@ class ChessBoard:
                         king_pos = self.find_king(piece_color == 'w')
                         if not self.is_under_attack(king_pos[0], king_pos[1], piece_color == 'w'):
                             moves.append(potential_move)
+                            valid_moves.append(potential_move)
                         
                         self.board_state = temp_board
 
@@ -645,7 +646,6 @@ class ChessBoard:
         
         # Filter moves that would leave/put the king in check
         if check_check:
-            valid_moves = []
             for move in moves:
                 # Make temporary move
                 temp_board = deepcopy(self.board_state)
