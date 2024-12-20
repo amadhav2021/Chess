@@ -2,6 +2,7 @@
 
 
 import pygame
+from copy import deepcopy
 
 
 class ChessBoard:
@@ -9,18 +10,20 @@ class ChessBoard:
         pygame.init()
         self.SQUARE_SIZE = 80
         self.BOARD_SIZE = self.SQUARE_SIZE * 8
-        self.screen = pygame.display.set_mode((self.BOARD_SIZE, self.BOARD_SIZE))
+        self.screen = pygame.display.set_mode((self.BOARD_SIZE, self.BOARD_SIZE + 40))  # Extra height for status
         pygame.display.set_caption("Chess Game")
         
         # Colors
         self.WHITE = (255, 255, 255)
         self.BROWN = (139, 69, 19)
-        self.YELLOW = (255, 255, 0, 50)  # Highlighting color
+        self.YELLOW = (255, 255, 0, 50)
+        self.RED = (255, 0, 0, 50)
         
         # Game state
         self.selected_piece = None
         self.white_to_move = True
-        self.move_log = []
+        self.in_check = False
+        self.checkmate = False
         
         # Initialize piece positions
         self.board_state = [
@@ -42,8 +45,7 @@ class ChessBoard:
                 pygame.image.load(f'images/{piece}.png'),
                 (self.SQUARE_SIZE, self.SQUARE_SIZE)
             )
-            
-        # Valid moves for the selected piece
+        
         self.valid_moves = []
 
     def draw_board(self):
@@ -69,13 +71,36 @@ class ChessBoard:
             s.fill(self.YELLOW)
             self.screen.blit(s, (col * self.SQUARE_SIZE, row * self.SQUARE_SIZE))
             
-            # Highlight valid moves
             for move in self.valid_moves:
                 end_row, end_col = move
                 s = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE))
                 s.set_alpha(100)
                 s.fill(self.YELLOW)
                 self.screen.blit(s, (end_col * self.SQUARE_SIZE, end_row * self.SQUARE_SIZE))
+        
+        # Highlight king in check
+        if self.in_check:
+            king_pos = self.find_king(self.white_to_move)
+            s = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE))
+            s.set_alpha(100)
+            s.fill(self.RED)
+            self.screen.blit(s, (king_pos[1] * self.SQUARE_SIZE, king_pos[0] * self.SQUARE_SIZE))
+
+        # Draw status bar
+        status_rect = pygame.Rect(0, self.BOARD_SIZE, self.BOARD_SIZE, 40)
+        pygame.draw.rect(self.screen, (200, 200, 200), status_rect)
+        font = pygame.font.Font(None, 36)
+        
+        # Status text
+        status = "White to move" if self.white_to_move else "Black to move"
+        if self.checkmate:
+            status = "Checkmate! " + ("Black" if self.white_to_move else "White") + " wins!"
+        elif self.in_check:
+            status = "Check! " + status
+        
+        text = font.render(status, True, (0, 0, 0))
+        text_rect = text.get_rect(center=(self.BOARD_SIZE/2, self.BOARD_SIZE + 20))
+        self.screen.blit(text, text_rect)
 
     def draw_pieces(self):
         for row in range(8):
@@ -92,7 +117,58 @@ class ChessBoard:
                         )
                     )
 
-    def get_valid_moves(self, start_row, start_col):
+    def find_king(self, is_white_king):
+        """Find the position of the king"""
+        king = 'wK' if is_white_king else 'bK'
+        for row in range(8):
+            for col in range(8):
+                if self.board_state[row][col] == king:
+                    return (row, col)
+        return None
+
+    def is_under_attack(self, row, col, is_white):
+        """Check if a square is under attack by opponent pieces"""
+        opponent_moves = []
+        for r in range(8):
+            for c in range(8):
+                piece = self.board_state[r][c]
+                if piece != '--' and (piece[0] == 'b' if is_white else piece[0] == 'w'):
+                    opponent_moves.extend(self.get_valid_moves_for_piece(r, c, check_check=False))
+        return (row, col) in opponent_moves
+
+    def make_move(self, start_row, start_col, end_row, end_col):
+        """Make a move and update game state"""
+        # Store current state
+        old_board = deepcopy(self.board_state)
+        
+        # Make the move
+        self.board_state[end_row][end_col] = self.board_state[start_row][start_col]
+        self.board_state[start_row][start_col] = '--'
+        
+        # Switch turns
+        self.white_to_move = not self.white_to_move
+        
+        # Check if the move puts the opponent in check
+        king_pos = self.find_king(self.white_to_move)
+        self.in_check = self.is_under_attack(king_pos[0], king_pos[1], self.white_to_move)
+        
+        # Check for checkmate
+        if self.in_check:
+            has_valid_moves = False
+            for r in range(8):
+                for c in range(8):
+                    piece = self.board_state[r][c]
+                    if piece != '--' and piece[0] == ('w' if self.white_to_move else 'b'):
+                        moves = self.get_valid_moves_for_piece(r, c)
+                        if moves:
+                            has_valid_moves = True
+                            break
+                if has_valid_moves:
+                    break
+            self.checkmate = not has_valid_moves
+
+    def get_valid_moves_for_piece(self, start_row, start_col, check_check=True):
+        """Get all valid moves for a piece"""
         piece = self.board_state[start_row][start_col]
         moves = []
         
@@ -205,23 +281,42 @@ class ChessBoard:
                     if target_piece == '--' or target_piece[0] != piece_color:
                         moves.append((end_row, end_col))
         
+        # Filter moves that would leave/put the king in check
+        if check_check:
+            valid_moves = []
+            for move in moves:
+                # Make temporary move
+                temp_board = deepcopy(self.board_state)
+                end_row, end_col = move
+                self.board_state[end_row][end_col] = self.board_state[start_row][start_col]
+                self.board_state[start_row][start_col] = '--'
+                
+                # Check if king is in check after move
+                king_pos = self.find_king(piece_color == 'w')
+                if not self.is_under_attack(king_pos[0], king_pos[1], piece_color == 'w'):
+                    valid_moves.append(move)
+                
+                # Restore board
+                self.board_state = temp_board
+            
+            return valid_moves
+        
         return moves
 
     def handle_click(self, row, col):
+        if self.checkmate:
+            return
+            
         if self.selected_piece is None:
             piece = self.board_state[row][col]
             if piece != '--' and ((piece[0] == 'w' and self.white_to_move) or 
                                 (piece[0] == 'b' and not self.white_to_move)):
                 self.selected_piece = (row, col)
-                self.valid_moves = self.get_valid_moves(row, col)
+                self.valid_moves = self.get_valid_moves_for_piece(row, col)
         else:
             start_row, start_col = self.selected_piece
             if (row, col) in self.valid_moves:
-                # Make the move
-                self.board_state[row][col] = self.board_state[start_row][start_col]
-                self.board_state[start_row][start_col] = '--'
-                self.white_to_move = not self.white_to_move
-                self.move_log.append((start_row, start_col, row, col))
+                self.make_move(start_row, start_col, row, col)
             self.selected_piece = None
             self.valid_moves = []
 
