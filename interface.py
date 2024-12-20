@@ -1,4 +1,4 @@
-"""App to play chess. Claude 3.5 Sonnet and ChatGPT 4o-mini was used to help with development"""
+"""App to play chess. Claude 3.5 Sonnet was used to help with development"""
 
 import pygame
 from copy import deepcopy
@@ -28,6 +28,12 @@ class ChessBoard:
         
         # Game state
         self.selected_piece = None
+        self.drag_threshold = 5  # Pixels of movement needed to start drag
+        self.mouse_start_pos = None  # Track where mouse press began
+        self.dragging = False
+        self.drag_piece = None
+        self.drag_pos = None
+        self.drag_start = None
         self.piece_count = 32
         self.pieces_left = {
             'wP': 8,
@@ -226,15 +232,62 @@ class ChessBoard:
             for col in range(8):
                 piece = self.board_state[row][col]
                 if piece != '--':
-                    self.screen.blit(
-                        self.pieces[piece],
-                        pygame.Rect(
-                            col * self.SQUARE_SIZE,
-                            row * self.SQUARE_SIZE,
-                            self.SQUARE_SIZE,
-                            self.SQUARE_SIZE
+                    # Don't draw the piece being dragged in its original position
+                    if not (self.dragging and (row, col) == self.drag_start):
+                        self.screen.blit(
+                            self.pieces[piece],
+                            pygame.Rect(
+                                col * self.SQUARE_SIZE,
+                                row * self.SQUARE_SIZE,
+                                self.SQUARE_SIZE,
+                                self.SQUARE_SIZE
+                            )
                         )
-                    )
+        
+        # Draw the dragged piece last, so it appears on top
+        if self.dragging and self.drag_piece and self.drag_pos:
+            piece_img = self.pieces[self.drag_piece]
+            # Center the piece on the mouse cursor
+            piece_rect = piece_img.get_rect(center=self.drag_pos)
+            self.screen.blit(piece_img, piece_rect)
+
+    def start_drag(self, row, col):
+        piece = self.board_state[row][col]
+        if piece != '--' and ((piece[0] == 'w' and self.white_to_move) or 
+                            (piece[0] == 'b' and not self.white_to_move)):
+            self.dragging = True
+            self.drag_piece = piece
+            self.drag_start = (row, col)
+            self.selected_piece = (row, col)
+            self.valid_moves = self.get_valid_moves_for_piece(row, col)
+            return True
+        return False
+
+    def update_drag(self, pos):
+        if self.dragging:
+            self.drag_pos = pos
+
+    def end_drag(self, pos):
+        if not self.dragging:
+            return
+            
+        self.dragging = False
+        self.drag_pos = None
+        
+        # Convert mouse position to board coordinates
+        if pos[1] < self.BOARD_SIZE:  # Make sure the drop is within the board
+            end_col = pos[0] // self.SQUARE_SIZE
+            end_row = pos[1] // self.SQUARE_SIZE
+            
+            # Check if the move is valid
+            if (end_row, end_col) in self.valid_moves:
+                start_row, start_col = self.drag_start
+                self.make_move(start_row, start_col, end_row, end_col)
+        
+        self.drag_piece = None
+        self.drag_start = None
+        self.selected_piece = None
+        self.valid_moves = []
 
     def find_king(self, is_white_king):
         """Find the position of the king"""
@@ -475,30 +528,72 @@ class ChessBoard:
                 self.valid_moves = self.get_valid_moves_for_piece(row, col)
         else:
             start_row, start_col = self.selected_piece
-            if (row, col) in self.valid_moves:
+            if (row, col) == (start_row, start_col):  # Clicked same square
+                self.selected_piece = None
+                self.valid_moves = []
+            elif (row, col) in self.valid_moves:  # Valid move
                 self.make_move(start_row, start_col, row, col)
-            self.selected_piece = None
-            self.valid_moves = []
+                self.selected_piece = None
+                self.valid_moves = []
+            else:  # Clicked different square
+                piece = self.board_state[row][col]
+                if piece != '--' and ((piece[0] == 'w' and self.white_to_move) or 
+                                    (piece[0] == 'b' and not self.white_to_move)):
+                    # If clicking another valid piece, select it instead
+                    self.selected_piece = (row, col)
+                    self.valid_moves = self.get_valid_moves_for_piece(row, col)
+                else:
+                    # If clicking an invalid square, deselect
+                    self.selected_piece = None
+                    self.valid_moves = []
 
     def run_game(self):
         running = True
+        mouse_pressed = False
+        
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
+                        mouse_pressed = True
                         pos = pygame.mouse.get_pos()
+                        self.mouse_start_pos = pos
+                        
                         if self.awaiting_promotion:
-                            # If awaiting promotion, only handle promotion clicks
                             if self.handle_promotion_click(pos):
                                 self.white_to_move = not self.white_to_move
-                        else:
-                            # Otherwise handle regular board clicks
-                            if pos[1] < self.BOARD_SIZE:
-                                col = pos[0] // self.SQUARE_SIZE
-                                row = pos[1] // self.SQUARE_SIZE
-                                self.handle_click(row, col)
+                        elif pos[1] < self.BOARD_SIZE:
+                            col = pos[0] // self.SQUARE_SIZE
+                            row = pos[1] // self.SQUARE_SIZE
+                            # Just handle as click initially - don't start drag yet
+                            self.handle_click(row, col)
+                
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:  # Left click release
+                        if self.dragging:  # End drag if we were dragging
+                            pos = pygame.mouse.get_pos()
+                            self.end_drag(pos)
+                        mouse_pressed = False
+                        self.mouse_start_pos = None
+                
+                elif event.type == pygame.MOUSEMOTION:
+                    if mouse_pressed and self.mouse_start_pos and not self.dragging:
+                        # Calculate distance moved
+                        current_pos = event.pos
+                        dx = current_pos[0] - self.mouse_start_pos[0]
+                        dy = current_pos[1] - self.mouse_start_pos[1]
+                        distance = (dx * dx + dy * dy) ** 0.5
+                        
+                        # If moved past threshold and a piece is selected, start dragging
+                        if distance > self.drag_threshold and self.selected_piece:
+                            row, col = self.selected_piece
+                            if self.start_drag(row, col):
+                                self.drag_pos = current_pos
+                    
+                    if self.dragging:
+                        self.update_drag(event.pos)
 
             self.draw_board()
             self.draw_pieces()
