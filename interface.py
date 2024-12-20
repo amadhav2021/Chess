@@ -21,10 +21,26 @@ class ChessBoard:
         
         # Game state
         self.selected_piece = None
+        self.piece_count = 32
+        self.pieces_left = {
+            'wP': 8,
+            'wR': 2,
+            'wN': 2,
+            'wB': 2,
+            'wQ': 1,
+            'wK': 1,
+            'bP': 8,
+            'bR': 2,
+            'bN': 2,
+            'bB': 2,
+            'bQ': 1,
+            'bK': 1,
+        }
         self.white_to_move = True
         self.in_check = False
         self.checkmate = False
         self.stalemate = False
+        self.insufficient = False
         
         # Initialize piece positions
         self.board_state = [
@@ -98,6 +114,8 @@ class ChessBoard:
             status = "Checkmate! " + ("Black" if self.white_to_move else "White") + " wins!"
         elif self.stalemate:
             status = "Stalemate! Draw."
+        elif self.insufficient:
+            status = "Insufficient material! Draw."
         elif self.in_check:
             status = "Check! " + status
         
@@ -139,10 +157,29 @@ class ChessBoard:
                     opponent_moves.extend(self.get_valid_moves_for_piece(r, c, check_check=False))
         return (row, col) in opponent_moves
 
+    def is_insufficient(self):
+        """Check if the current board state has insufficient material"""
+        
+        if self.piece_count == 2: return True
+        if self.piece_count >= 4: return False
+        
+        if (self.pieces_left['wP'] > 0) or (self.pieces_left['bP'] > 0): return False
+        if (self.pieces_left['wQ'] > 0) or (self.pieces_left['bQ'] > 0): return False
+        if (self.pieces_left['wR'] > 0) or (self.pieces_left['bR'] > 0): return False
+
+        return True
+
+
     def make_move(self, start_row, start_col, end_row, end_col):
         """Make a move and update game state"""
         # Store current state
         old_board = deepcopy(self.board_state)
+
+        # Check if the move is a capture
+        destination = self.board_state[end_row][end_col]
+        if destination != '--':
+            self.pieces_left[destination]-=1
+            self.piece_count-=1
         
         # Make the move
         self.board_state[end_row][end_col] = self.board_state[start_row][start_col]
@@ -171,6 +208,9 @@ class ChessBoard:
         if not has_valid_moves:
             self.checkmate = self.in_check
             self.stalemate = not self.in_check
+
+        # Check for draw by insufficient material
+        self.insufficient = self.is_insufficient()
 
     def get_valid_moves_for_piece(self, start_row, start_col, check_check=True):
         """Get all valid moves for a piece"""
@@ -309,7 +349,7 @@ class ChessBoard:
         return moves
 
     def handle_click(self, row, col):
-        if self.checkmate or self.stalemate:
+        if self.checkmate or self.stalemate or self.insufficient:
             return
             
         if self.selected_piece is None:
