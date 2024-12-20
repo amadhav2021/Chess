@@ -24,6 +24,7 @@ class ChessBoard:
         self.white_to_move = True
         self.in_check = False
         self.checkmate = False
+        self.stalemate = False
         
         # Initialize piece positions
         self.board_state = [
@@ -95,6 +96,8 @@ class ChessBoard:
         status = "White to move" if self.white_to_move else "Black to move"
         if self.checkmate:
             status = "Checkmate! " + ("Black" if self.white_to_move else "White") + " wins!"
+        elif self.stalemate:
+            status = "Stalemate! Draw."
         elif self.in_check:
             status = "Check! " + status
         
@@ -152,20 +155,22 @@ class ChessBoard:
         king_pos = self.find_king(self.white_to_move)
         self.in_check = self.is_under_attack(king_pos[0], king_pos[1], self.white_to_move)
         
-        # Check for checkmate
-        if self.in_check:
-            has_valid_moves = False
-            for r in range(8):
-                for c in range(8):
-                    piece = self.board_state[r][c]
-                    if piece != '--' and piece[0] == ('w' if self.white_to_move else 'b'):
-                        moves = self.get_valid_moves_for_piece(r, c)
-                        if moves:
-                            has_valid_moves = True
-                            break
-                if has_valid_moves:
-                    break
-            self.checkmate = not has_valid_moves
+        # Check for checkmate and stalemate
+        has_valid_moves = False
+        for r in range(8):
+            for c in range(8):
+                piece = self.board_state[r][c]
+                if piece != '--' and piece[0] == ('w' if self.white_to_move else 'b'):
+                    moves = self.get_valid_moves_for_piece(r, c)
+                    if moves:
+                        has_valid_moves = True
+                        break
+            if has_valid_moves:
+                break
+        
+        if not has_valid_moves:
+            self.checkmate = self.in_check
+            self.stalemate = not self.in_check
 
     def get_valid_moves_for_piece(self, start_row, start_col, check_check=True):
         """Get all valid moves for a piece"""
@@ -304,7 +309,7 @@ class ChessBoard:
         return moves
 
     def handle_click(self, row, col):
-        if self.checkmate:
+        if self.checkmate or self.stalemate:
             return
             
         if self.selected_piece is None:
