@@ -36,18 +36,17 @@ class ChessBoard:
         self.drag_start = None
         self.piece_count = 32
         self.pieces_left = {
-            'wP': 8,
-            'wR': 2,
-            'wN': 2,
-            'wB': 2,
-            'wQ': 1,
-            'wK': 1,
-            'bP': 8,
-            'bR': 2,
-            'bN': 2,
-            'bB': 2,
-            'bQ': 1,
-            'bK': 1,
+            'wP': 8, 'wR': 2, 'wN': 2, 'wB': 2, 'wQ': 1, 'wK': 1,
+            'bP': 8, 'bR': 2, 'bN': 2, 'bB': 2, 'bQ': 1, 'bK': 1,
+        }
+        # Track if pieces have moved (for castling)
+        self.has_moved = {
+            (0, 0): False,  # Black queenside rook
+            (0, 7): False,  # Black kingside rook
+            (0, 4): False,  # Black king
+            (7, 0): False,  # White queenside rook
+            (7, 7): False,  # White kingside rook
+            (7, 4): False,  # White king
         }
         self.white_to_move = True
         self.in_check = False
@@ -320,22 +319,124 @@ class ChessBoard:
 
         return True
 
+    def can_castle(self, side):
+        """Check if castling is legal for the given side ('k' for kingside, 'q' for queenside)"""
+        row = 7 if self.white_to_move else 0
+        king_pos = (row, 4)
+        
+        # King must not have moved
+        if self.has_moved[king_pos]:
+            return False
+        
+        # King must not be in check
+        if self.in_check:
+            return False
+        
+        # Get expected rook color
+        rook_color = 'w' if self.white_to_move else 'b'
+        expected_rook = rook_color + 'R'
+        
+        if side == 'k':
+            rook_pos = (row, 7)
+            # Check if kingside rook has moved
+            if self.has_moved[rook_pos]:
+                return False
+                
+            # Verify correct rook is present
+            if self.board_state[row][7] != expected_rook:
+                return False
+            
+            # Check if squares between king and rook are empty
+            if self.board_state[row][5] != '--' or self.board_state[row][6] != '--':
+                return False
+            
+            # Check if king passes through check
+            temp_board = deepcopy(self.board_state)
+            # Check square king passes through
+            self.board_state[row][5] = self.board_state[row][4]
+            self.board_state[row][4] = '--'
+            passing_safe = not self.is_under_attack(row, 5, self.white_to_move)
+            self.board_state = temp_board
+            
+            # Check destination square
+            temp_board = deepcopy(self.board_state)
+            self.board_state[row][6] = self.board_state[row][4]
+            self.board_state[row][4] = '--'
+            destination_safe = not self.is_under_attack(row, 6, self.white_to_move)
+            self.board_state = temp_board
+            
+            return passing_safe and destination_safe
+            
+        else:  # queenside
+            rook_pos = (row, 0)
+            # Check if queenside rook has moved
+            if self.has_moved[rook_pos]:
+                return False
+                
+            # Verify correct rook is present
+            if self.board_state[row][0] != expected_rook:
+                return False
+            
+            # Check if squares between king and rook are empty
+            if self.board_state[row][1] != '--' or self.board_state[row][2] != '--' or self.board_state[row][3] != '--':
+                return False
+            
+            # Check if king passes through check
+            temp_board = deepcopy(self.board_state)
+            # Check square king passes through
+            self.board_state[row][3] = self.board_state[row][4]
+            self.board_state[row][4] = '--'
+            passing_safe = not self.is_under_attack(row, 3, self.white_to_move)
+            self.board_state = temp_board
+            
+            # Check destination square
+            temp_board = deepcopy(self.board_state)
+            self.board_state[row][2] = self.board_state[row][4]
+            self.board_state[row][4] = '--'
+            destination_safe = not self.is_under_attack(row, 2, self.white_to_move)
+            self.board_state = temp_board
+            
+            return passing_safe and destination_safe
+    
     def make_move(self, start_row, start_col, end_row, end_col):
         """Make a move and update game state"""
         moving_piece = self.board_state[start_row][start_col]
         
-        # Check if the move is a capture
-        destination = self.board_state[end_row][end_col]
-        if destination != '--':
-            self.pieces_left[destination]-=1
-            self.piece_count-=1
-            self.capture_sound.play()
-        else:
+        # Track piece movement for castling
+        if (start_row, start_col) in self.has_moved:
+            self.has_moved[(start_row, start_col)] = True
+        
+        # Check if the move is a castle
+        if moving_piece[1] == 'K' and abs(end_col - start_col) == 2:
+            # Kingside castle
+            if end_col == 6:
+                # Move rook
+                self.board_state[end_row][5] = self.board_state[end_row][7]
+                self.board_state[end_row][7] = '--'
+            # Queenside castle
+            else:
+                # Move rook
+                self.board_state[end_row][3] = self.board_state[end_row][0]
+                self.board_state[end_row][0] = '--'
+            
+            # Move king
+            self.board_state[end_row][end_col] = moving_piece
+            self.board_state[start_row][start_col] = '--'
             self.move_sound.play()
         
-        # Make the move
-        self.board_state[end_row][end_col] = moving_piece
-        self.board_state[start_row][start_col] = '--'
+        else:
+            # Check if the move is a capture
+            destination = self.board_state[end_row][end_col]
+            if destination != '--':
+                self.pieces_left[destination] -= 1
+                self.piece_count -= 1
+                self.capture_sound.play()
+            else:
+                self.move_sound.play()
+            
+            # Make the move
+            self.board_state[end_row][end_col] = moving_piece
+            self.board_state[start_row][start_col] = '--'
         
         # Check for pawn promotion
         if moving_piece[1] == 'P' and (end_row == 0 or end_row == 7):
@@ -370,7 +471,7 @@ class ChessBoard:
         
         elif self.in_check:
             self.check_sound.play()
-
+        
         # Check for draw by insufficient material
         if self.is_insufficient():
             self.insufficient = True
@@ -480,6 +581,7 @@ class ChessBoard:
         
         # King moves
         elif piece_type == 'K':
+            # Normal king moves
             directions = [(0, 1), (0, -1), (1, 0), (-1, 0),
                          (1, 1), (1, -1), (-1, 1), (-1, -1)]
             for dr, dc in directions:
@@ -489,6 +591,15 @@ class ChessBoard:
                     target_piece = self.board_state[end_row][end_col]
                     if target_piece == '--' or target_piece[0] != piece_color:
                         moves.append((end_row, end_col))
+            
+            # Castling moves
+            if check_check:  # Only check castling if we're checking for check
+                # Check kingside castle
+                if self.can_castle('k'):
+                    moves.append((start_row, start_col + 2))
+                # Check queenside castle
+                if self.can_castle('q'):
+                    moves.append((start_row, start_col - 2))
         
         # Filter moves that would leave/put the king in check
         if check_check:
