@@ -1,4 +1,4 @@
-"""App to play chess. Claude 3.5 Sonnet was used to help with development"""
+"""App to play chess. Claude 3.5 Sonnet and GPT 4o-mini was used to help with development"""
 
 import pygame
 from copy import deepcopy
@@ -56,6 +56,7 @@ class ChessBoard:
         self.insufficient = False
         self.awaiting_promotion = False
         self.promotion_square = None
+        self.last_move = None
         
         # Initialize piece positions
         self.board_state = [
@@ -402,7 +403,20 @@ class ChessBoard:
     def make_move(self, start_row, start_col, end_row, end_col):
         """Make a move and update game state"""
         moving_piece = self.board_state[start_row][start_col]
+
+        en_passant = False
         
+        # En passant capture
+        if moving_piece[1] == 'P' and self.last_move:
+            last_start_row, last_start_col, last_end_row, last_end_col = self.last_move
+            if abs(end_col - start_col) == 1 and end_row == last_end_row + (1 if moving_piece[0] == 'b' else -1):
+                if self.board_state[end_row][end_col] == '--' and self.board_state[last_end_row][last_end_col] == ('wP' if moving_piece[0] == 'b' else 'bP'):
+                    # Remove the captured pawn
+                    self.board_state[last_end_row][last_end_col] = '--'
+                    self.pieces_left['wP' if moving_piece[0] == 'b' else 'bP'] -= 1
+                    self.piece_count -= 1
+                    en_passant = True
+
         # Track piece movement for castling
         if (start_row, start_col) in self.has_moved:
             self.has_moved[(start_row, start_col)] = True
@@ -432,12 +446,17 @@ class ChessBoard:
                 self.pieces_left[destination] -= 1
                 self.piece_count -= 1
                 self.capture_sound.play()
+            elif en_passant:
+                self.capture_sound.play()
             else:
                 self.move_sound.play()
             
             # Make the move
             self.board_state[end_row][end_col] = moving_piece
             self.board_state[start_row][start_col] = '--'
+        
+        # Record the move for en passant tracking
+        self.last_move = (start_row, start_col, end_row, end_col) if moving_piece[1] == 'P' and abs(end_row - start_row) == 2 else None
         
         # Check for pawn promotion
         if moving_piece[1] == 'P' and (end_row == 0 or end_row == 7):
@@ -507,7 +526,28 @@ class ChessBoard:
                     target_piece = self.board_state[start_row + direction][start_col + col_offset]
                     if target_piece != '--' and target_piece[0] != piece_color:
                         moves.append((start_row + direction, start_col + col_offset))
-        
+
+            # En passant capture
+             # En passant capture
+            if self.last_move:
+                last_start_row, last_start_col, last_end_row, last_end_col = self.last_move
+                if abs(last_end_row - last_start_row) == 2 and abs(last_end_col - start_col) == 1:
+                    if last_end_row == start_row and self.board_state[last_end_row][last_end_col] == ('wP' if piece_color == 'b' else 'bP'):
+                        potential_move = (start_row + direction, last_end_col)
+
+                        # Validate the en passant move does not leave the king in check
+                        temp_board = deepcopy(self.board_state)
+                        self.board_state[start_row][start_col] = '--'
+                        self.board_state[last_end_row][last_end_col] = '--'
+                        self.board_state[start_row + direction][last_end_col] = piece
+
+                        king_pos = self.find_king(piece_color == 'w')
+                        if not self.is_under_attack(king_pos[0], king_pos[1], piece_color == 'w'):
+                            moves.append(potential_move)
+                        
+                        self.board_state = temp_board
+
+
         # Rook moves
         elif piece_type == 'R':
             directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
