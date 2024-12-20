@@ -1,6 +1,5 @@
 """App to play chess. Claude 3.5 Sonnet was used to help with development"""
 
-
 import pygame
 from copy import deepcopy
 
@@ -14,10 +13,12 @@ class ChessBoard:
         pygame.display.set_caption("Chess Game")
         
         # Colors
-        self.WHITE = (255, 255, 255)
-        self.BROWN = (139, 69, 19)
+        self.WHITE = (239, 180, 139)
+        self.BROWN = (145, 79, 31)
         self.YELLOW = (255, 255, 0, 50)
         self.RED = (255, 0, 0, 50)
+        self.GRAY = (128, 128, 128)
+        self.ALPHA = 200
         
         # Game state
         self.selected_piece = None
@@ -41,6 +42,8 @@ class ChessBoard:
         self.checkmate = False
         self.stalemate = False
         self.insufficient = False
+        self.awaiting_promotion = False
+        self.promotion_square = None
         
         # Initialize piece positions
         self.board_state = [
@@ -84,14 +87,14 @@ class ChessBoard:
         if self.selected_piece:
             row, col = self.selected_piece
             s = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE))
-            s.set_alpha(100)
+            s.set_alpha(self.ALPHA)
             s.fill(self.YELLOW)
             self.screen.blit(s, (col * self.SQUARE_SIZE, row * self.SQUARE_SIZE))
             
             for move in self.valid_moves:
                 end_row, end_col = move
                 s = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE))
-                s.set_alpha(100)
+                s.set_alpha(self.ALPHA)
                 s.fill(self.YELLOW)
                 self.screen.blit(s, (end_col * self.SQUARE_SIZE, end_row * self.SQUARE_SIZE))
         
@@ -99,7 +102,7 @@ class ChessBoard:
         if self.in_check:
             king_pos = self.find_king(self.white_to_move)
             s = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE))
-            s.set_alpha(100)
+            s.set_alpha(self.ALPHA)
             s.fill(self.RED)
             self.screen.blit(s, (king_pos[1] * self.SQUARE_SIZE, king_pos[0] * self.SQUARE_SIZE))
 
@@ -118,10 +121,90 @@ class ChessBoard:
             status = "Insufficient material! Draw."
         elif self.in_check:
             status = "Check! " + status
+        elif self.awaiting_promotion:
+            status = "Choose promotion piece: Q, R, B, or N"
         
         text = font.render(status, True, (0, 0, 0))
         text_rect = text.get_rect(center=(self.BOARD_SIZE/2, self.BOARD_SIZE + 20))
         self.screen.blit(text, text_rect)
+
+    def draw_promotion_options(self):
+        if not self.awaiting_promotion or not self.promotion_square:
+            return
+            
+        row, col = self.promotion_square
+        color = 'w' if row == 0 else 'b'
+        pieces = ['Q', 'R', 'B', 'N']
+        
+        # Draw semi-transparent overlay
+        overlay = pygame.Surface((self.BOARD_SIZE, self.BOARD_SIZE))
+        overlay.set_alpha(128)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw promotion options
+        option_size = self.SQUARE_SIZE
+        start_x = (self.BOARD_SIZE - option_size * len(pieces)) // 2
+        start_y = (self.BOARD_SIZE - option_size) // 2
+        
+        for i, piece in enumerate(pieces):
+            # Draw background
+            pygame.draw.rect(self.screen, self.WHITE, 
+                           (start_x + i * option_size, start_y, option_size, option_size))
+            pygame.draw.rect(self.screen, self.GRAY, 
+                           (start_x + i * option_size, start_y, option_size, option_size), 2)
+            
+            # Draw piece
+            piece_img = self.pieces[color + piece]
+            self.screen.blit(piece_img, (start_x + i * option_size, start_y))
+
+    def handle_promotion_click(self, pos):
+        if not self.awaiting_promotion:
+            return False
+            
+        option_size = self.SQUARE_SIZE
+        pieces = ['Q', 'R', 'B', 'N']
+        start_x = (self.BOARD_SIZE - option_size * len(pieces)) // 2
+        start_y = (self.BOARD_SIZE - option_size) // 2
+        
+        # Check if click is within promotion options area
+        if start_y <= pos[1] <= start_y + option_size:
+            for i, piece in enumerate(pieces):
+                if start_x + i * option_size <= pos[0] <= start_x + (i + 1) * option_size:
+                    row, col = self.promotion_square
+                    color = 'w' if row == 0 else 'b'
+                    self.board_state[row][col] = color + piece
+                    
+                    # Update piece counts
+                    self.pieces_left[color + 'P'] -= 1
+                    self.pieces_left[color + piece] += 1
+                    
+                    self.awaiting_promotion = False
+                    self.promotion_square = None
+                    
+                    # Check if the move puts the opponent in check
+                    king_pos = self.find_king(not (color == 'w'))
+                    self.in_check = self.is_under_attack(king_pos[0], king_pos[1], not (color == 'w'))
+                    
+                    # Check for checkmate and stalemate
+                    has_valid_moves = False
+                    for r in range(8):
+                        for c in range(8):
+                            piece = self.board_state[r][c]
+                            if piece != '--' and piece[0] == ('w' if not (color == 'w') else 'b'):
+                                moves = self.get_valid_moves_for_piece(r, c)
+                                if moves:
+                                    has_valid_moves = True
+                                    break
+                        if has_valid_moves:
+                            break
+                    
+                    if not has_valid_moves:
+                        self.checkmate = self.in_check
+                        self.stalemate = not self.in_check
+                    
+                    return True
+        return False
 
     def draw_pieces(self):
         for row in range(8):
@@ -169,12 +252,10 @@ class ChessBoard:
 
         return True
 
-
     def make_move(self, start_row, start_col, end_row, end_col):
         """Make a move and update game state"""
-        # Store current state
-        old_board = deepcopy(self.board_state)
-
+        moving_piece = self.board_state[start_row][start_col]
+        
         # Check if the move is a capture
         destination = self.board_state[end_row][end_col]
         if destination != '--':
@@ -182,8 +263,14 @@ class ChessBoard:
             self.piece_count-=1
         
         # Make the move
-        self.board_state[end_row][end_col] = self.board_state[start_row][start_col]
+        self.board_state[end_row][end_col] = moving_piece
         self.board_state[start_row][start_col] = '--'
+        
+        # Check for pawn promotion
+        if moving_piece[1] == 'P' and (end_row == 0 or end_row == 7):
+            self.awaiting_promotion = True
+            self.promotion_square = (end_row, end_col)
+            return
         
         # Switch turns
         self.white_to_move = not self.white_to_move
@@ -349,6 +436,10 @@ class ChessBoard:
         return moves
 
     def handle_click(self, row, col):
+        # If waiting for promotion choice, ignore board clicks
+        if self.awaiting_promotion:
+            return
+            
         if self.checkmate or self.stalemate or self.insufficient:
             return
             
@@ -374,12 +465,21 @@ class ChessBoard:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         pos = pygame.mouse.get_pos()
-                        col = pos[0] // self.SQUARE_SIZE
-                        row = pos[1] // self.SQUARE_SIZE
-                        self.handle_click(row, col)
+                        if self.awaiting_promotion:
+                            # If awaiting promotion, only handle promotion clicks
+                            if self.handle_promotion_click(pos):
+                                self.white_to_move = not self.white_to_move
+                        else:
+                            # Otherwise handle regular board clicks
+                            if pos[1] < self.BOARD_SIZE:
+                                col = pos[0] // self.SQUARE_SIZE
+                                row = pos[1] // self.SQUARE_SIZE
+                                self.handle_click(row, col)
 
             self.draw_board()
             self.draw_pieces()
+            if self.awaiting_promotion:
+                self.draw_promotion_options()
             pygame.display.flip()
 
         pygame.quit()
